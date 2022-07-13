@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+ <meta charset="utf-8" />
+ <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+ <title>Timeline</title>
+ <style>
+html, body {
+	font-family: 'Roboto', 'Segoe UI', 'Verdana', sans-serif;
+	width: 100%;
+	height: 100%;
+	padding: 0;
+	margin: 0;
+}
+.timeline {
+	min-height: 100%;
+	position: relative;
+}
+.timeline.demo {
+	padding: 0 5px;
+}
+.timeline.active {
+	cursor: none;
+}
+.timeline > .vruler {
+	position: absolute;
+	width: 1px;
+	height: 100%;
+	background-color: red;
+}
+.timeline > .hruler {
+	position: absolute;
+	width: 100%;
+	height: 1px;
+	background-color: red;
+}
+.timeline > .vruler-tick {
+	position: fixed;
+	top: 2px;
+	margin-left: 1px;
+	z-index: 9;
+	background-color: white;
+	padding: 0 5px;
+	user-select: none;
+}
+.timeline > .section {
+	width: 100%;
+	position: relative;
+	height: 24px;
+}
+.timeline > .section:hover {
+	font-weight: bold;
+}
+.timeline > .section > .bar {
+	position: absolute;
+	top: 2px;
+	background-color: rgb(0, 149, 255);
+	height: 20px;
+	border: 1px solid black;
+	box-sizing: border-box;
+	border-radius: 3px;
+}
+.timeline > .section > .bar > .part {
+	position: absolute;
+	right: 0px;
+	height: 18px;
+}
+.timeline > .section > .text {
+	position: absolute;
+	left: 5px;
+	line-height: 24px;
+	height: 24px;
+	cursor: text;
+}
+.timeline > .section > .ts_pct {
+	position: absolute;
+	top: 0;
+	right: 5px;
+	line-height: 24px;
+	height: 24px;
+	user-select: none;
+}
+.timeline > .section > .ts_sec {
+	position: absolute;
+	top: 0;
+	right: 60px;
+	line-height: 24px;
+	height: 24px;
+	user-select: none;
+}
+ </style>
+</head>
+<body ondrop="onDrop(event)" ondragover="onDragOver(event)">
+ <div class="timeline demo">
+  <div>Drag and drop a valid json file or enter it below.<button onclick="onClickButton(event)">Enter</button></div>
+  <div></div>
+  <textarea rows="20" cols="80">{
+	"tstart": 0.0,
+	"tend": 1.0,
+	"sections": [
+		{
+			"text": "First half",
+			"tstart": 0.0,
+			"tend": 0.5,
+			"parts": [
+				{ "ts": 0.1, "color": "white" },
+				{ "ts": 0.3, "color": "limegreen" }
+			]
+		},
+		{
+			"text": "Second half",
+			"tstart": 0.5,
+			"tend": 1.0
+		}
+	]
+}</textarea>
+ </div>
+</body>
+<script>
+function onDrop(ev) {
+	ev.preventDefault();
+	if (ev.dataTransfer.items) {
+		let items = ev.dataTransfer.items;
+		for (let i = 0; i < items.length; i++) {
+			if (items[i].kind === 'file') {
+				loadFromFile(items[i].getAsFile());
+			}
+		}
+	}
+	else {
+		let files = ev.dataTransfer.files;
+		for (let i = 0; i < files.length; i += 1) {
+			loadFromFile(files[i]);
+		}
+	}
+}
+function onDragOver(ev) {
+	ev.preventDefault();
+}
+function onClickButton(ev) {
+	let textarea = document.querySelector("textarea");
+	if (textarea) {
+		loadFromText(textarea.value);
+	}
+}
+function loadFromFile(file) {
+	let fileReader = new FileReader();
+	fileReader.onload = e => {
+		loadFromText(fileReader.result);
+	};
+	fileReader.onerror = e => {
+		console.log(e);
+		alert("There was an error reading the file!");
+	};
+	fileReader.readAsText(file);
+}
+function loadFromText(text) {
+	try {
+		data = JSON.parse(text);
+		loadFromJSON(data);
+	}
+	catch (e) {
+		console.log(e);
+		alert("There was an error parsing the file!");
+	}
+}
+function loadFromJSON(data) {
+	let timeline = document.createElement('div');
+	timeline.classList.add('timeline', 'active');
+
+	let percent = (ts, tstart, tend, fractDigits) => {
+		let pct = (ts - tstart) / (tend - tstart) * 100.0;
+		return isFinite(pct) ? '' + pct.toFixed(fractDigits ?? 4) + '%' : '0';
+	};
+
+	// Create rulers
+	let vrulerDiv = document.createElement('div');
+	vrulerDiv.classList.add('vruler');
+	timeline.appendChild(vrulerDiv);
+	let hrulerDiv = document.createElement('div');
+	hrulerDiv.classList.add('hruler');
+	timeline.appendChild(hrulerDiv);
+	let vrulerTickDiv = document.createElement('div');
+	vrulerTickDiv.classList.add('vruler-tick');
+	timeline.appendChild(vrulerTickDiv);
+	timeline.addEventListener("mousemove", e => {
+		let pageWidth = timeline.offsetWidth;
+		let pct = e.pageX / pageWidth;
+		vrulerDiv.style.left = `${e.pageX}px`;
+		hrulerDiv.style.top = `${e.pageY}px`;
+		vrulerTickDiv.textContent = (pct * (data.tend - data.tstart)).toFixed(1) + 's';
+		if (pct < 0.5) {
+			vrulerTickDiv.style.left = `${e.pageX}px`;
+			vrulerTickDiv.style.removeProperty('right');
+		}
+		else {
+			vrulerTickDiv.style.right = `${pageWidth - e.pageX}px`;
+			vrulerTickDiv.style.removeProperty('left');
+		}
+	});
+
+	// Create the spacer section
+	{
+		let spacerDiv = document.createElement('div');
+		spacerDiv.classList.add('section');
+		timeline.appendChild(spacerDiv);
+	}
+
+	// Create the section divs
+	let sections = data.sections;
+	for (let si = 0; si < sections.length; si += 1) {
+		let sect = sections[si];
+		let sectionDiv = document.createElement('div');
+		sectionDiv.classList.add('section');
+
+		let barDiv = document.createElement('div');
+		barDiv.classList.add('bar');
+		barDiv.style.left = percent(sect.tstart, data.tstart, data.tend);
+		barDiv.style.width = percent(sect.tend - sect.tstart, 0.0, data.tend);
+		sectionDiv.appendChild(barDiv);
+
+		if ('parts' in sect) {
+			let parts = sect.parts;
+			for (let pi = 0; pi < parts.length; pi += 1) {
+				let part = parts[pi];
+				let partDiv = document.createElement('div');
+				partDiv.classList.add('part');
+				partDiv.style.left = percent(part.ts, sect.tstart, sect.tend);
+				partDiv.style.backgroundColor = part.color;
+				barDiv.appendChild(partDiv);
+			}
+		}
+
+		let textDiv = document.createElement('div');
+		textDiv.classList.add('text');
+		textDiv.textContent = sect.text;
+		sectionDiv.appendChild(textDiv);
+
+		let tsSecDiv = document.createElement('div');
+		tsSecDiv.classList.add('ts_sec');
+		tsSecDiv.textContent = `${(sect.tend - sect.tstart).toFixed(1)}s`;
+		sectionDiv.appendChild(tsSecDiv);
+
+		let tsPctDiv = document.createElement('div');
+		tsPctDiv.classList.add('ts_pct');
+		tsPctDiv.textContent = percent(sect.tend - sect.tstart, 0.0, data.tend - data.tstart, 1);
+		sectionDiv.appendChild(tsPctDiv);
+
+		timeline.appendChild(sectionDiv);
+	}
+
+	document.querySelector('.timeline').replaceWith(timeline);
+}
+const TEXT = null;
+if (TEXT != null) {
+	loadFromText(TEXT);
+}
+</script>
+</html>
