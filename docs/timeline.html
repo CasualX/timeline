@@ -11,6 +11,8 @@ html, body {
 	height: 100%;
 	padding: 0;
 	margin: 0;
+	background-color: rgb(30, 30, 30);
+	color: rgb(204, 204, 204);
 }
 .timeline {
 	min-height: 100%;
@@ -20,7 +22,8 @@ html, body {
 	padding: 0 5px;
 }
 .timeline.active {
-	cursor: none;
+	width: 100%;
+	overflow-y: hidden;
 }
 .timeline > .vruler {
 	position: absolute;
@@ -36,19 +39,18 @@ html, body {
 }
 .timeline > .vruler-tick {
 	position: fixed;
-	top: 2px;
 	margin-left: 1px;
 	z-index: 9;
-	background-color: white;
+	background-color: rgb(30, 30, 30);
 	padding: 0 5px;
 	user-select: none;
 }
 .timeline > .section {
 	width: 100%;
 	position: relative;
-	height: 24px;
+	min-height: 24px;
 }
-.timeline > .section:hover {
+.timeline > .section:hover .bold {
 	font-weight: bold;
 }
 .timeline > .section > .bar {
@@ -56,9 +58,9 @@ html, body {
 	top: 2px;
 	background-color: rgb(0, 149, 255);
 	height: 20px;
-	border: 1px solid black;
+	border: 1px solid rgb(204, 204, 204);
 	box-sizing: border-box;
-	border-radius: 3px;
+	cursor: pointer;
 }
 .timeline > .section > .bar > .part {
 	position: absolute;
@@ -70,22 +72,54 @@ html, body {
 	left: 5px;
 	line-height: 24px;
 	height: 24px;
-	cursor: text;
+	user-select: none;
+	cursor: pointer;
+}
+.timeline > .section > .logs {
+	padding-top: 36px;
+	padding-bottom: 12px;
+	width: 100%;
+	font-family: 'Fira Code', Consolas, 'Courier New', monospace;
+	font-size: 12px;
+	white-space: pre;
+	overflow: hidden;
+}
+.timeline > .section > .logs > .mark {
+	position: absolute;
+	background-color: red;
+	width: 3px;
+	height: 24px;
+	top: 0;
+	margin-left: -1px;
+}
+.timeline > .section > .logs > .line {
+	display: grid;
+	grid-template: auto / 56px auto;
+}
+.timeline > .section > .logs > .line > .no {
+	text-align: right;
+	user-select: none;
+	padding-right: 8px;
+	color: rgb(102, 102, 102);
 }
 .timeline > .section > .ts_pct {
 	position: absolute;
 	top: 0;
 	right: 5px;
+	font-size: 12px;
 	line-height: 24px;
 	height: 24px;
+	color: rgb(102, 102, 102);
 	user-select: none;
 }
 .timeline > .section > .ts_sec {
 	position: absolute;
 	top: 0;
 	right: 60px;
+	font-size: 12px;
 	line-height: 24px;
 	height: 24px;
+	color: rgb(102, 102, 102);
 	user-select: none;
 }
  </style>
@@ -155,16 +189,106 @@ function loadFromFile(file) {
 	fileReader.readAsText(file);
 }
 function loadFromText(text) {
+	if (text.startsWith("{")) {
+		loadFromJSON(text);
+	}
+	else {
+		loadFromLogs(text);
+	}
+}
+function loadFromJSON(text) {
 	try {
 		data = JSON.parse(text);
-		loadFromJSON(data);
+		loadFromData(data);
 	}
 	catch (e) {
 		console.log(e);
 		alert("There was an error parsing the file!");
 	}
 }
-function loadFromJSON(data) {
+function loadFromLogs(text) {
+	let lines = text.split("\n");
+	let tstart = 0.0;
+	let tend = 0.0;
+	let sect = {
+		index: 0,
+		text: "",
+		tstart: 0.0,
+		tend: 0.0,
+		parts: [],
+		lines: [],
+		linenos: [],
+		linets: [],
+	};
+	let sections = [sect];
+	let stack = [];
+
+	for (let i = 0; i < lines.length; i += 1) {
+		let line = lines[i].trim();
+
+		let a = line.indexOf(" ");
+		if (a < 0) {
+			// Skip lines not starting with a datetime
+			continue;
+		}
+
+		let date = Date.parse(line.substring(0, a)) / 1000.0;
+		line = line.substring(a + 1);
+
+		if (tstart == 0.0) {
+			tstart = date;
+		}
+		tend = date;
+
+		if (line.startsWith("##[startsection]")) {
+			stack.push(sect.index);
+			sect = {
+				index: sections.length,
+				text: line.substring("##[startsection]".length).trimStart(),
+				tstart: date,
+				tend: date,
+				parts: [],
+				lines: [],
+				linenos: [],
+				linets: [],
+			};
+			sections.push(sect);
+			sect.lines.push(line);
+			sect.linenos.push(i);
+			sect.linets.push(date);
+		}
+		else if (line.startsWith("##[endsection]")) {
+			sect.lines.push(line);
+			sect.linenos.push(i);
+			sect.linets.push(date);
+			sect.tend = date;
+			sect = sections[stack.pop()];
+		}
+		else {
+			if (line.startsWith("##[colorsection]")) {
+				sect.parts.push({
+					ts: date,
+					color: line.substring("##[colorsection]".length).trimStart(),
+				});
+			}
+			sect.lines.push(line);
+			sect.linenos.push(i);
+			sect.linets.push(date);
+		}
+	}
+	sect.tstart = tstart;
+	sect.tend = tend;
+	let data = {
+		tstart: tstart,
+		tend: tend,
+		sections: sections,
+	};
+	loadFromData(data);
+}
+function loadFromData(data) {
+	// Expose the data to the user
+	window.DATA = data;
+
 	let timeline = document.createElement('div');
 	timeline.classList.add('timeline', 'active');
 
@@ -179,7 +303,7 @@ function loadFromJSON(data) {
 	timeline.appendChild(vrulerDiv);
 	let hrulerDiv = document.createElement('div');
 	hrulerDiv.classList.add('hruler');
-	timeline.appendChild(hrulerDiv);
+	// timeline.appendChild(hrulerDiv);
 	let vrulerTickDiv = document.createElement('div');
 	vrulerTickDiv.classList.add('vruler-tick');
 	timeline.appendChild(vrulerTickDiv);
@@ -199,7 +323,65 @@ function loadFromJSON(data) {
 		}
 	});
 
-	// Create the spacer section
+	timeline.addEventListener("click", e => {
+		let target = e.target;
+		let foundInteract = false;
+		while (target && !target.classList.contains('section')) {
+			if (target.classList.contains('interact')) {
+				foundInteract = true;
+			}
+			target = target.parentElement;
+		}
+		if (!target || !foundInteract) {
+			return false;
+		}
+
+		let sect = data.sections[target.section_index];
+		if (!('lines' in sect && 'linenos' in sect && 'linets' in sect)) {
+			return;
+		}
+
+		let logsDiv = target.querySelector(".logs");
+		if (logsDiv) {
+			logsDiv.remove();
+		}
+		else {
+			logsDiv = document.createElement('div');
+			logsDiv.classList.add('logs');
+			for (let j = 0; j < sect.lines.length; j += 1) {
+				let lineNoDiv = document.createElement('div');
+				lineNoDiv.classList.add('no');
+				lineNoDiv.textContent = sect.linenos[j];
+				let lineTextDiv = document.createElement('div');
+				lineTextDiv.classList.add('txt');
+				lineTextDiv.textContent = sect.lines[j];
+				let lineDiv = document.createElement('div');
+				lineDiv.classList.add('line');
+				lineDiv.mark_pos = percent(sect.linets[j], data.tstart, data.tend);
+				lineDiv.appendChild(lineNoDiv);
+				lineDiv.appendChild(lineTextDiv);
+				logsDiv.appendChild(lineDiv);
+			}
+			markDiv = document.createElement('div');
+			markDiv.classList.add('mark');
+			markDiv.style.display = 'none';
+			logsDiv.appendChild(markDiv);
+			logsDiv.addEventListener("mousemove", function(e) {
+				let mDiv = this.querySelector(".mark");
+				let target = e.target.parentElement;
+				if (target.classList.contains('line')) {
+					mDiv.style.left = target.mark_pos;
+					mDiv.style.display = 'block';
+				}
+				else {
+					mDiv.style.display = 'none';
+				}
+			});
+			target.appendChild(logsDiv);
+		}
+	});
+
+	// // Create the spacer section
 	{
 		let spacerDiv = document.createElement('div');
 		spacerDiv.classList.add('section');
@@ -212,11 +394,12 @@ function loadFromJSON(data) {
 		let sect = sections[si];
 		let sectionDiv = document.createElement('div');
 		sectionDiv.classList.add('section');
+		sectionDiv.section_index = si;
 
 		let barDiv = document.createElement('div');
-		barDiv.classList.add('bar');
+		barDiv.classList.add('bar', 'interact');
 		barDiv.style.left = percent(sect.tstart, data.tstart, data.tend);
-		barDiv.style.width = percent(sect.tend - sect.tstart, 0.0, data.tend);
+		barDiv.style.width = percent(sect.tend - sect.tstart, 0.0, data.tend - data.tstart);
 		sectionDiv.appendChild(barDiv);
 
 		if ('parts' in sect) {
@@ -232,17 +415,17 @@ function loadFromJSON(data) {
 		}
 
 		let textDiv = document.createElement('div');
-		textDiv.classList.add('text');
+		textDiv.classList.add('text', 'bold', 'interact');
 		textDiv.textContent = sect.text;
 		sectionDiv.appendChild(textDiv);
 
 		let tsSecDiv = document.createElement('div');
-		tsSecDiv.classList.add('ts_sec');
+		tsSecDiv.classList.add('ts_sec', 'bold');
 		tsSecDiv.textContent = `${(sect.tend - sect.tstart).toFixed(1)}s`;
 		sectionDiv.appendChild(tsSecDiv);
 
 		let tsPctDiv = document.createElement('div');
-		tsPctDiv.classList.add('ts_pct');
+		tsPctDiv.classList.add('ts_pct', 'bold');
 		tsPctDiv.textContent = percent(sect.tend - sect.tstart, 0.0, data.tend - data.tstart, 1);
 		sectionDiv.appendChild(tsPctDiv);
 
@@ -250,10 +433,6 @@ function loadFromJSON(data) {
 	}
 
 	document.querySelector('.timeline').replaceWith(timeline);
-}
-const TEXT = null;
-if (TEXT != null) {
-	loadFromText(TEXT);
 }
 </script>
 </html>
